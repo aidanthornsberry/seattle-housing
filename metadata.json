@@ -1,0 +1,5 @@
+{
+  "name": "Middle Housing CSV Filter",
+  "description": "A tool to process Seattle construction permit CSV data, filtering for middle housing projects (ADUs, DADUs, Townhomes, ULS, etc.) and classifying them.",
+  "requestFramePermissions": []
+}
