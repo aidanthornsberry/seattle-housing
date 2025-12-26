@@ -13,25 +13,55 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const handleDataLoaded = (rawData: CsvRow[]) => {
+    console.log(`Processing ${rawData.length} rows...`);
+    let loadedCoordsCount = 0;
+
     const processed = rawData.map(row => {
-      // Assuming keys from user's sample: Description is Column G
-      // We look for 'Description' key specifically, or attempt to find it
-      const descriptionKey = Object.keys(row).find(k => k.toLowerCase().includes('description')) || 'Description';
-      const projectKey = Object.keys(row).find(k => k.toLowerCase().includes('project name')) || 'Property/Project Name';
-      const addressKey = Object.keys(row).find(k => k.toLowerCase().includes('address')) || 'Address';
+      // 1. Column Identification with loose matching (trim whitespace, ignore case)
+      const keys = Object.keys(row);
+      const findKey = (target: string) => keys.find(k => k.trim().toLowerCase() === target.toLowerCase());
+      const findKeyIncludes = (target: string) => keys.find(k => k.trim().toLowerCase().includes(target.toLowerCase()));
+
+      const descriptionKey = findKeyIncludes('description') || 'Description';
+      const projectKey = findKeyIncludes('project name') || 'Property/Project Name';
+      const addressKey = findKeyIncludes('address') || 'Address';
       
+      // Strict matching for coords to avoid false positives, but allow case variance
+      const latKey = findKey('latitude') || 'Latitude';
+      const lngKey = findKey('longitude') || 'Longitude';
+
       const desc = row[descriptionKey] || '';
       const proj = row[projectKey] || '';
       const address = row[addressKey] || '';
       
+      // 2. Classification
       const classification = classifyProject(desc, proj, address);
       
+      // 3. Coordinate Extraction (Instant Map Loading)
+      let location = undefined;
+      const latStr = row[latKey];
+      const lngStr = row[lngKey];
+
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        
+        // Basic bounds check for Seattle area (broadened slightly to ensure we don't miss valid points)
+        // Seattle roughly: 47.6, -122.3. Bounds: 47-48, -123 to -121
+        if (!isNaN(lat) && !isNaN(lng) && lat > 46.5 && lat < 48.5 && lng > -123.5 && lng < -121.5) {
+            location = { lat, lng };
+            loadedCoordsCount++;
+        }
+      }
+
       return {
-        ...classification, // Spread classification properties first
-        original: row      // Then assign original row to ensure it's not overwritten by an empty object
+        ...classification, 
+        location: location, // Attach pre-existing location if available
+        original: row      
       };
     });
     
+    console.log(`Successfully loaded coordinates for ${loadedCoordsCount} rows.`);
     setData(processed);
   };
 
@@ -39,9 +69,10 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadDefaultData = async () => {
       try {
-        // Looks for 'permits.csv' in the public folder or root
         console.log("Attempting to fetch ./permits.csv...");
-        const response = await fetch('./permits.csv');
+        // Add timestamp to query string to bypass browser caching of the old CSV file
+        // This is critical when the user updates the file on the server/disk.
+        const response = await fetch(`./permits.csv?t=${Date.now()}`);
         
         if (!response.ok) {
           throw new Error(`Could not find 'permits.csv' (Status: ${response.status}). Please ensure the file exists in the public folder.`);
